@@ -1,9 +1,7 @@
+from dotenv import load_dotenv
 import tweepy
-import requests
 import schedule
 import time
-from web3 import Web3
-from dotenv import load_dotenv
 import os
 import random
 
@@ -26,85 +24,55 @@ client = tweepy.Client(
 )
 print("Twitter client initialized.")
 
-# API endpoint for block information
-block_api_url = 'https://sp-api.dappnode.io/memory/allblocks'
+educational_phrases = [
+    "Blockchain permite transacciones seguras y transparentes sin necesidad de intermediarios. 🌐💳",
+    "Los contratos inteligentes en blockchain automatizan acuerdos sin la necesidad de intermediarios. 🤖📜",
+    "La descentralización en blockchain brinda mayor seguridad y resistencia a la censura. 🔒🌐",
+    "Bitcoin es la primera y más conocida aplicación de la tecnología blockchain. 🚀🔗",
+    "Blockchain puede revolucionar la industria financiera al proporcionar transacciones eficientes y seguras. 💸🌐",
+    "Las criptomonedas utilizan tecnología blockchain para garantizar la integridad de las transacciones. 💎🔗"
+]
 
-last_posted_tweet = None
-last_posted_block = None 
+posted_phrases_file = "posted_phrases.txt"
 
-def get_block_message(block):
-    slot = block['slot']
-    block_type = block['block_type']
-    block_number = block['block']
-    validator_key = block['validator_key']
+def read_posted_phrases():
+    try:
+        with open(posted_phrases_file, "r") as file:
+            return file.read().splitlines()
+    except FileNotFoundError:
+        return []
 
-    # Check if 'reward_wei' is present in the block information
-    if 'reward_wei' in block:
-        reward_wei = block['reward_wei']
+def write_posted_phrase(phrase):
+    with open(posted_phrases_file, "a") as file:
+        file.write(phrase + "\n")
 
-        # Check the block type
-        if block_type == 'wrongfeerecipient':
-            # Post the tweet with some variation
-            address = block['withdrawal_address']
-            amount = Web3.from_wei(int(block['reward_wei']), 'ether')
-            variation = random.choice(["🚨❌", "🚫❗️", "⛔", "❌💔", "⚠️🔒", "🔴🚫"])
-            return f"{variation} BANNED FROM SMOOTH {variation} - {address} has been banned for sending {amount:.4f} ETH out of the pool"
-        elif block_type == 'okpoolproposal':
-            # Convert wei to ETH
-            w3 = Web3()
-            reward_eth = w3.from_wei(int(reward_wei), 'ether')
+def post_educational_tweet():
+    posted_phrases = read_posted_phrases()
+    remaining_phrases = list(set(educational_phrases) - set(posted_phrases))
 
-            # Create tweet message with some variation
-            variation = random.choice(["🚨", "🎉", "💰", "🔥", "🌟", "👑"]) 
-            return f"{variation} NEW BLOCK IN SMOOTH {variation} - {reward_eth:.4f} ETH from a ☁️ Smooth Operator 😏 (Block #{block_number}, Slot #{slot})"
-    else:
-        print(f"Skipping tweet for block {block_number} (missing reward)")
-        return None
+    if not remaining_phrases:
+        print("All phrases have been posted. Resetting...")
+        write_posted_phrase("")  # Reset the posted phrases
 
-def post_tweet():
-    global last_posted_tweet, last_posted_block 
+    educational_phrase = random.choice(remaining_phrases)
 
-    # Get the latest 6 block information
-    response = requests.get(block_api_url)
-    blocks = response.json()
-    blocks.reverse()
-    latest_blocks = blocks[:6]
+    try:
+        response = client.create_tweet(
+            text=educational_phrase
+        )
+        print(f"Educational tweet posted successfully! Tweet URL: https://twitter.com/user/status/{response.data['id']}")
+        write_posted_phrase(educational_phrase)
+    except tweepy.errors.Forbidden as e:
+        print(f"An error occurred: {e}")
+    except tweepy.errors.TooManyRequests as e:
+        print(f"Rate limit exceeded. Waiting and retrying...")
+        time.sleep(60)
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
 
-    # Iterate over the latest 6 blocks
-    for block in latest_blocks:
-        block_number = block['block']
-
-        # Check if the current block is the same as the last posted block
-        if block_number == last_posted_block:
-            print(f"Skipping tweet (block {block_number} already posted)")
-            continue
-
-        tweet_message = get_block_message(block)
-
-        # Check if tweet_message is not None
-        if tweet_message is not None:
-            try:
-                response = client.create_tweet(
-                    text=tweet_message
-                )
-                print(f"Tweet posted successfully! Tweet URL: https://twitter.com/user/status/{response.data['id']}")
-                print(f"Block Number: {block_number}\nSlot: {block['slot']}\nBlock_type: {block['block_type']}")
-                last_posted_tweet = tweet_message
-                last_posted_block = block_number
-                print(f"Last Posted Tweet Updated: {last_posted_tweet}")
-            except tweepy.errors.Forbidden as e:
-                print(f"An error occurred: {e}")
-            except tweepy.errors.TooManyRequests as e:
-                print(f"Rate limit exceeded. Waiting and retrying...")
-                time.sleep(60)
-            except Exception as e:
-                print(f"An unexpected error occurred: {e}")
-        else:
-            print("Skipping tweet (duplicate content)")
-
-# Schedule the tweet to run every minute
-schedule.every(1).minutes.do(post_tweet)
-print("Tweet scheduler set up.")
+# Schedule the educational tweet to run every hour
+schedule.every().hour.do(post_educational_tweet)
+print("Educational tweet scheduler set up.")
 
 # Run the scheduler
 while True:
